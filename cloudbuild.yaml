@@ -9,9 +9,10 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/java11-example']
 
+logsBucket: "gs://terraformgcpow23"
+
 options:
   logging: GCS_ONLY
-  logsBucket: "gs://terraformgcpow23"
 
 images:
   - 'gcr.io/$PROJECT_ID/java11-example'
