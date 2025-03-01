@@ -2,11 +2,13 @@ on:
   push:
     branches:
       - 'main'
+
 permissions:
   id-token: write
   security-events: write
   actions: read
   contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,18 +21,28 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::385738345149:role/CodeGuruSecurityGitHubAccessRole          role-session-name: GitHubActionScript
+          role-to-assume: arn:aws:iam::385738345149:role/CodeGuruSecurityGitHubAccessRole
+          aws-region: us-east-1
+          role-session-name: GitHubActionScript
+      
       - name: Run CodeGuru Security Scan
         uses: aws-actions/codeguru-security@v1
         with:
           source_path: .
           aws_region: us-east-1
           fail_on_severity: Critical
-      - name: Print Findings
+      
+      - name: Print Findings (if available)
         run: |
           ls -l
-          cat codeguru-security-results.sarif.json
+          if [ -f "codeguru-security-results.sarif.json" ]; then
+            cat codeguru-security-results.sarif.json
+          else
+            echo "No SARIF results file found."
+          fi
+      
       - name: Upload Result
+        if: success() # Ensures upload runs only if the previous step succeeds
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: codeguru-security-results.sarif.json
