@@ -1,0 +1,32 @@
+pipeline {
+    agent any
+    stages {
+        stage('SCM code') {
+            steps {
+                git 'https://github.com/hellokaton/java11-examples.git'
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+        
+        stage('Publish') {
+            steps {
+                archiveArtifacts 'target/*.jar'
+            }
+        }
+        
+        stage('SCP to Remote Host') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'ssh-login', usernameVariable: 'SSH_USER', passwordVariable: 'SSH_PASS')]) {
+                    sh '''
+                        sshpass -p "$SSH_PASS" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null target/*.jar $SSH_USER@192.168.111.130:/tmp/
+                    '''
+                }
+            }
+        }
+    }
+}
