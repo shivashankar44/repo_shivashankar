@@ -25,5 +25,10 @@ steps {
 sh 'echo performing sonar'
 }
 }
+stage('Build') {
+      steps {
+        sh 'docker build -t my-flask-app .'
+        }
+        }
 }
 }
