@@ -9,7 +9,6 @@ checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs:
 }
 stage('Install sonarqube cli') {
 steps {
-// Step to install SonarQube CLI
 sh 'sudo apt install unzip -y'
 sh 'sudo wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip'
 sh 'sudo unzip -o -q sonar-scanner.zip'
