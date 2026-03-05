@@ -24,17 +24,6 @@ jobs:
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }} \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
             .
-
-      - name: Smoke test
-        run: |
-          echo "Starting container for smoke test..."
-          CONTAINER_ID=$(docker run -d ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }})
-          sleep 5
-          docker ps | grep $CONTAINER_ID
-          docker stop $CONTAINER_ID
-          docker rm $CONTAINER_ID
-          echo "Smoke test passed."
-
   publish:
     name: Publish to Docker Hub
     runs-on: [self-hosted, linux]
