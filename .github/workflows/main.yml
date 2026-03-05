@@ -1,0 +1,157 @@
+name: Docker CI
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+env:
+  IMAGE_NAME: "my-docker-app"
+  IMAGE_VERSION: "1.0.0"
+  DOCKER_REGISTRY: "registry.example.com"
+  DEPLOY_ENV: "production"
+  CONTAINER_PORT: "8080"
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Docker is available
+        run: |
+          docker --version
+          docker info
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Docker image
+        run: |
+          echo "Building image: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}"
+          docker build \
+            --tag ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }} \
+            --tag ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            .
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Run basic smoke test
+        run: |
+          echo "Running container smoke test..."
+          CONTAINER_ID=$(docker run -d -p ${{ env.CONTAINER_PORT }}:${{ env.CONTAINER_PORT }} \
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }})
+          sleep 5
+          docker ps | grep $CONTAINER_ID
+          docker stop $CONTAINER_ID
+          docker rm $CONTAINER_ID
+          echo "Smoke test passed."
+
+      - name: Save Docker image as tar
+        run: |
+          docker save ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }} \
+            -o /tmp/${{ env.IMAGE_NAME }}-${{ env.IMAGE_VERSION }}.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/${{ env.IMAGE_NAME }}-${{ env.IMAGE_VERSION }}.tar
+          retention-days: 1
+
+  test:
+    name: Test Docker Image
+    runs-on: [self-hosted, linux]
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: |
+          docker load -i /tmp/${{ env.IMAGE_NAME }}-${{ env.IMAGE_VERSION }}.tar
+          docker images | grep ${{ env.IMAGE_NAME }}
+
+      - name: Run container tests
+        run: |
+          echo "Running container in test mode..."
+          docker run --rm \
+            --name ${{ env.IMAGE_NAME }}-test \
+            -e APP_ENV=test \
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }} \
+            echo "Container test passed"
+
+      - name: Clean up test image
+        if: always()
+        run: |
+          docker rmi ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }} || true
+          docker rmi ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest || true
+
+  publish:
+    name: Publish Docker Image
+    runs-on: [self-hosted, linux]
+    needs: [build, test]
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: |
+          docker load -i /tmp/${{ env.IMAGE_NAME }}-${{ env.IMAGE_VERSION }}.tar
+          docker images | grep ${{ env.IMAGE_NAME }}
+
+      - name: Log in to Docker Registry
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login ${{ env.DOCKER_REGISTRY }} \
+            -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+      - name: Push Docker image
+        run: |
+          echo "Pushing ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}"
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Clean up local images
+        if: always()
+        run: |
+          docker rmi ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }} || true
+          docker rmi ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest || true
+          docker logout ${{ env.DOCKER_REGISTRY }}
+
+      - name: Deployment summary
+        run: |
+          echo "=========================================="
+          echo "Image : ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "Version : ${{ env.IMAGE_VERSION }}"
+          echo "Environment : ${{ env.DEPLOY_ENV }}"
+          echo "Status : Published successfully"
+          echo "=========================================="
