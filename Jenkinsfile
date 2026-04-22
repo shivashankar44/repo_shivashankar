@@ -1,7 +1,7 @@
 pipeline {
 agent any
 stages {
-stage('chckout scm') {
+stage('chckout asdscm') {
 steps {
 checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/hellokaton/java11-examples.git']])
 }
